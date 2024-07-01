@@ -23,8 +23,8 @@ contract DUNcoreTest is Test {
         wbtc = new MockERC20("Wrapped Bitcoin", "WBTC");
 
         // Deploy mock price feed contracts
-        wethPriceFeed = new MockAggregator(3000 * 10**18); // Initial price of $3000 for WETH
-        wbtcPriceFeed = new MockAggregator(50000 * 10**18); // Initial price of $50000 for WBTC
+        wethPriceFeed = new MockAggregator(3000 * 10**8); // Initial price of $3000 for WETH
+        wbtcPriceFeed = new MockAggregator(50000 * 10**8); // Initial price of $50000 for WBTC
 
         duncore = new DUNcore(
             address(dun),
@@ -37,6 +37,7 @@ contract DUNcoreTest is Test {
         // Mint tokens to the user for testing
         weth.mint(user, 1000 ether);
         wbtc.mint(user, 1000 ether);
+        dun.mint(address(duncore), 1000000 ether); // Mint DUN tokens to the contract for testing
     }
 
     function testDepositAndMint() public {
@@ -51,6 +52,7 @@ contract DUNcoreTest is Test {
         vm.startPrank(user);
         weth.approve(address(duncore), 100 ether);
         duncore.depositCollateralAndMintDUN(address(weth), 100 ether, 200 ether);
+        dun.approve(address(duncore), 200 ether); // Added DUN approval
         duncore.burnDUNAndRedeemCollateral(100 ether, address(weth), 50 ether);
         assertEq(dun.balanceOf(user), 100 ether);
         assertEq(weth.balanceOf(user), 950 ether);
@@ -63,6 +65,19 @@ contract DUNcoreTest is Test {
         weth.approve(address(duncore), 100 ether);
         duncore.depositCollateralAndMintDUN(address(weth), 100 ether, 200 ether);
         vm.stopPrank();
+
+        // Check health factor before price drop
+        uint256 healthFactorBefore = duncore.getHealthFactor(user);
+        emit log_named_uint("Health Factor Before Price Drop", healthFactorBefore);
+
+        // Simulate price drop to make the position undercollateralized
+        vm.startPrank(address(this)); // Prank as the contract deployer to call updateAnswer
+        wethPriceFeed.updateAnswer(1500 * 10**8); // Price of WETH drops to $1500
+        vm.stopPrank();
+
+        // Check health factor after price drop
+        uint256 healthFactorAfter = duncore.getHealthFactor(user);
+        emit log_named_uint("Health Factor After Price Drop", healthFactorAfter);
 
         vm.startPrank(liquidator);
         duncore.liquidatePosition(user, address(weth), 100 ether);
